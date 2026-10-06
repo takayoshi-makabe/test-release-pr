@@ -4,7 +4,6 @@ on:
   push:
     # staging への push (revert など) でも本文を更新する
     branches: [develop, staging]
-  workflow_dispatch:
 
 concurrency:
   group: create-release-pull-request
