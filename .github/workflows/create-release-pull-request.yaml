@@ -1,0 +1,63 @@
+name: Create Release Pull Request
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: create-release-pull-request
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-pull-request:
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_BRANCH: main
+      DEVELOP_BRANCH: develop
+      STAGING_BRANCH: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEVELOP_BRANCH }}
+          fetch-depth: 0
+
+      - name: Detect diff between main and develop
+        id: diff
+        run: |
+          if git diff --quiet "origin/${PRODUCTION_BRANCH}" "origin/${DEVELOP_BRANCH}"; then
+            echo "No diff between ${PRODUCTION_BRANCH} and ${DEVELOP_BRANCH}. Skip."
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update staging branch
+        if: steps.diff.outputs.has_diff == 'true'
+        run: |
+          # fast-forward のみ。staging が develop から分岐している場合は失敗させる
+          git push origin "refs/remotes/origin/${DEVELOP_BRANCH}:refs/heads/${STAGING_BRANCH}"
+
+      - name: Set up Ruby 3.2
+        if: steps.diff.outputs.has_diff == 'true'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.2
+
+      - name: Execute git-pr-release
+        if: steps.diff.outputs.has_diff == 'true'
+        env:
+          GIT_PR_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_PR_RELEASE_BRANCH_PRODUCTION: ${{ env.PRODUCTION_BRANCH }}
+          GIT_PR_RELEASE_BRANCH_STAGING: ${{ env.STAGING_BRANCH }}
+          GIT_PR_RELEASE_VERSION: 2.1.1
+          GIT_PR_RELEASE_LABELS: release
+          GIT_PR_RELEASE_TEMPLATE: ".github/pr-release-template.erb"
+        run: |
+          gem install -N git-pr-release -v $GIT_PR_RELEASE_VERSION
+          git remote set-url origin "https://${GITHUB_ACTOR}:${GIT_PR_RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git-pr-release --squashed

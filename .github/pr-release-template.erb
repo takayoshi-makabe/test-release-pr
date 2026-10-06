@@ -1,0 +1,9 @@
+Release <%= Time.now.getlocal('+09:00').strftime('%Y-%m-%d %H:%M') %>
+
+## Contents
+
+<% pull_requests.each do |pr| -%>
+<% if !pr.to_checklist_item.downcase(:ascii).include?("@dependabot[bot]") then -%>
+<%= pr.to_checklist_item %>
+<% end -%>
+<% end -%>
