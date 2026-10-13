@@ -4,7 +4,7 @@
 #   release-prs.sh list <head>   対象 PR を JSON で出力 (status: included | excluded)
 #   release-prs.sh body <head>   release PR の本文を出力 (OLD_BODY のチェック状態を引き継ぐ)
 #
-# 対象 = (develop に merge 済みで <head> に含まれる PR) - (前回の release でリリース済みの PR)
+# 対象 = (develop または staging に merge 済みで <head> に含まれる PR) - (前回の release でリリース済みの PR)
 #
 # リリース済み = 前回 merge された release PR (staging → main) の head に含まれ、
 #               かつその head 上で revert されていない PR。
@@ -37,9 +37,11 @@ reverted_shas() {
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-gh pr list --base "$develop" --state merged --limit 500 \
-  --json number,title,author,mergeCommit |
-  jq 'map({number, title, author: (.author.login // "ghost"), sha: .mergeCommit.oid})' >"$tmp/prs.json"
+# develop 向けの PR に加えて、staging に直接 merge された PR も対象にする
+for base in "$develop" "$staging"; do
+  gh pr list --base "$base" --state merged --limit 500 --json number,title,author,mergeCommit
+done |
+  jq -s 'add | map({number, title, author: (.author.login // "ghost"), sha: .mergeCommit.oid})' >"$tmp/prs.json"
 jq -r '.[].sha' "$tmp/prs.json" >"$tmp/candidates"
 
 # 今回の head に含まれる PR / そのうち revert されているもの

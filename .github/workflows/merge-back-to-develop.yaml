@@ -1,0 +1,51 @@
+name: Merge Back to Develop
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: merge-back-to-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  merge-back:
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_BRANCH: main
+      DEVELOP_BRANCH: develop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge main into develop
+        run: |
+          if git merge-base --is-ancestor "origin/${PRODUCTION_BRANCH}" "origin/${DEVELOP_BRANCH}"; then
+            echo "${PRODUCTION_BRANCH} is already merged into ${DEVELOP_BRANCH}. Skip."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -B "$DEVELOP_BRANCH" "origin/${DEVELOP_BRANCH}"
+
+          # conflict したら何も push せずに失敗させる (develop は一切変更しない)
+          if ! git merge --no-edit -m "Merge branch '${PRODUCTION_BRANCH}' into ${DEVELOP_BRANCH}" "origin/${PRODUCTION_BRANCH}"; then
+            {
+              echo "### ${PRODUCTION_BRANCH} → ${DEVELOP_BRANCH} の merge back に失敗しました (conflict)"
+              echo
+              echo '```'
+              git diff --name-only --diff-filter=U
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort
+            echo "::error::${PRODUCTION_BRANCH} を ${DEVELOP_BRANCH} に自動 merge できませんでした (conflict)。手動で merge して push してください。"
+            exit 1
+          fi
+
+          # 途中で develop が進んでいた場合は non-fast-forward で失敗する (force しない)
+          git push origin "HEAD:refs/heads/${DEVELOP_BRANCH}"
